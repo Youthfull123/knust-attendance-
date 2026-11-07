@@ -1,5 +1,5 @@
 import {createHmac,timingSafeEqual} from 'crypto';
-export const WINDOW=10000; // QR token changes every 10 s, on the server clock
+export const WINDOW=5000; // QR token changes every 10 s, on the server clock
 export const GRACE=3000;   // old code still accepted for 3 s after a change (scan/network delay). Set 0 for strict.
 const win=()=>Math.floor(Date.now()/WINDOW);
 export const msLeft=()=>WINDOW-(Date.now()%WINDOW);
