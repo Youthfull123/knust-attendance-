@@ -1,0 +1,3 @@
+{"name":"knust-attendance","private":true,"scripts":{"dev":"next dev","build":"next build","start":"next start","postinstall":"mkdir -p public/models && cp node_modules/@vladmandic/face-api/model/* public/models/"},
+"dependencies":{"next":"^15.0.0","react":"^19.0.0","react-dom":"^19.0.0","pg":"^8.11.0","jose":"^5.9.0","bcryptjs":"^2.4.3","pdfkit":"^0.15.0","qrcode.react":"^4.1.0","@vladmandic/face-api":"^1.7.13"},
+"devDependencies":{"typescript":"^5.5.0","@types/node":"^22.0.0","@types/react":"^19.0.0","@types/pg":"^8.11.0","@types/bcryptjs":"^2.4.6","@types/pdfkit":"^0.13.0"}}
