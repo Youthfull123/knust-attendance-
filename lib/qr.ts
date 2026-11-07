@@ -1,5 +1,5 @@
 import {createHmac,timingSafeEqual} from 'crypto';
-export const WINDOW=20000; // token rotates every 20 s
+export const WINDOW=10000; // token rotates every 20 s
 const win=()=>Math.floor(Date.now()/WINDOW);
 export const token=(secret:string,sid:string,w=win())=>createHmac('sha256',secret).update(`${sid}:${w}`).digest('base64url').slice(0,24);
 // SERVER-SIDE validation: current window, plus previous one as grace for network/scan latency.
