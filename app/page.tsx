@@ -5,7 +5,7 @@ export default function Home(){
  const [auth,setAuth]=useState(false),[mode,setMode]=useState('login'),[courses,setC]=useState<any[]>([]),[venues,setV]=useState<any[]>([]),[sid,setSid]=useState(''),[live,setL]=useState<any>(null),[err,setErr]=useState(''),[vmsg,setVmsg]=useState('');
  const load=async()=>{const c=await api('/api/courses');if(c.error)return setAuth(false);setAuth(true);setC(c);setV(await api('/api/venues'))};
  useEffect(()=>{load()},[]);
- useEffect(()=>{if(!sid)return;const f=async()=>setL(await api('/api/sessions?id='+sid));f();const i=setInterval(f,4000);return()=>clearInterval(i)},[sid]);
+ useEffect(()=>{if(!sid)return;const f=async()=>setL(await api('/api/sessions?id='+sid));f();const i=setInterval(f,2000);return()=>clearInterval(i)},[sid]);
  const fd=(f:any)=>Object.fromEntries(new FormData(f));
  const saveVenue=(e:any)=>{e.preventDefault();const f=e.target,name=String(new FormData(f).get('name')||'').trim();if(!name)return;setVmsg('Getting your location…');
   navigator.geolocation.getCurrentPosition(async g=>{await api('/api/venues','POST',{name,lat:g.coords.latitude,lng:g.coords.longitude,radius:Number(new FormData(f).get('radius'))||60});setVmsg(`Saved "${name}" (GPS accuracy ±${Math.round(g.coords.accuracy)} m).`);f.reset();load()},()=>setVmsg('Location permission denied.'),{enableHighAccuracy:true,timeout:20000})};
