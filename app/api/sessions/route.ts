@@ -1,7 +1,12 @@
 import {randomBytes} from 'crypto';import {q} from '@/lib/db';import {me} from '@/lib/auth';import {token,msLeft} from '@/lib/qr';
 const own=(sid:string,uid:number)=>q('select s.* from sessions s join courses c on c.id=s.course_id where s.id=$1 and c.lecturer_id=$2',[sid,uid]);
 export async function GET(r:Request){const u:any=await me();if(!u)return Response.json({error:'auth'},{status:401});
- const id=new URL(r.url).searchParams.get('id')!;const [s]=await own(id,u.uid);if(!s)return Response.json({error:'404'},{status:404});
+ const sp=new URL(r.url).searchParams,cid=sp.get('course');
+ if(cid)return Response.json(await q(`select s.id,s.status,s.started_at,v.name venue,
+  count(a.id) filter(where a.status='accepted')::int present,count(a.id) filter(where a.status in('flagged','rejected'))::int issues
+  from sessions s join courses c on c.id=s.course_id join venues v on v.id=s.venue_id left join attendance a on a.session_id=s.id
+  where s.course_id=$1 and c.lecturer_id=$2 group by s.id,v.name order by s.started_at desc`,[cid,u.uid]));
+ const id=sp.get('id')!;const [s]=await own(id,u.uid);if(!s)return Response.json({error:'404'},{status:404});
  const rows=await q('select id,student_id,status,reason,round(dist) dist,created_at from attendance where session_id=$1 order by id',[id]);
  const [c]=await q('select count(*)::int n from enrolments where course_id=$1',[s.course_id]);
  const live=s.status==='active'&&new Date(s.ends_at)>new Date();
