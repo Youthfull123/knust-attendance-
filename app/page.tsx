@@ -27,4 +27,17 @@ export default function Home(){
    <p><b>Present: {live.rows.filter((r:any)=>r.status==='accepted').length}</b></p>
    {live.status==='active'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'close'})}>Close session</button>}
    <table><tbody>{live.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td>{r.status==='flagged'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'approve',att:r.id})}>Approve</button>}</td></tr>)}</tbody></table></div>}
-  <div className="card"><h3>Courses & reports</h3><table><tbody>{courses.map(c=><tr key={c.id}><td>{c.code} {c.title}</td><td>{c.sessions} sessions</td><td><a href={`/api/reports?course=${c.id}&format=csv`}>CSV</a> · <a href={`/api/reports?course=${c.id}&format=pdf`}>PDF</a></td></tr>)}</tbody></table></div></div>}
+ <div className="card"><h3>Courses & reports</h3>{courses.map(c=><CourseRow key={c.id} c={c}/>)}</div></div>}
+
+function CourseRow({c}:{c:any}){
+ const [open,setOpen]=useState(false),[ss,setSs]=useState<any[]|null>(null),[sel,setSel]=useState(''),[det,setDet]=useState<any>(null);
+ const toggle=async()=>{const o=!open;setOpen(o);if(o)setSs(await api('/api/sessions?course='+c.id))};
+ const pick=async(id:string)=>{if(sel===id){setSel('');return}setSel(id);setDet(null);setDet(await api('/api/sessions?id='+id))};
+ return <div style={{borderBottom:'1px solid #e3e9e5',padding:'8px 0'}}>
+  <div className="bar"><button className="sec" onClick={toggle} style={{flex:1,textAlign:'left'}}>{open?'▼':'▶'} {c.code} {c.title}</button>
+   <span style={{marginLeft:10}}><a href={`/api/reports?course=${c.id}&format=csv`}>CSV</a> · <a href={`/api/reports?course=${c.id}&format=pdf`}>PDF</a></span></div>
+  {open&&<div style={{paddingLeft:14}}>
+   {!ss?<p>Loading…</p>:!Array.isArray(ss)||!ss.length?<p>No sessions yet.</p>:ss.map((s:any,i:number)=><div key={s.id}>
+    <button className="sec" style={{width:'100%',textAlign:'left'}} onClick={()=>pick(s.id)}>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
+    {sel===s.id&&(!det?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
+   </div>)}</div>}</div>}
