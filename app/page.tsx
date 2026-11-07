@@ -23,7 +23,7 @@ export default function Home(){
    <hr style={{border:0,borderTop:'1px solid #e3e9e5',margin:'14px 0'}}/><b>Venue missing or wrong location?</b><p style={{margin:'4px 0',color:'#555'}}>Stand inside the lecture hall, type its name, then tap the button.</p>
    <form onSubmit={saveVenue}><input name="name" placeholder="Venue name"/> <input name="radius" type="number" placeholder="Distance m (60)" style={{width:130}}/> <button className="sec">Save my current location as venue</button></form><p style={{color:'#0b6b3a'}}>{vmsg}</p></div>
   {sid&&live&&<div className="card"><h3>Live session ({live.status})</h3>
-   {live.token&&<QRCodeSVG value={`${location.origin}/attend?s=${sid}&t=${live.token}`} size={260}/>}
+   {live.token&&<div style={{width:260}}><QRCodeSVG value={`${location.origin}/attend?s=${sid}&t=${live.token}`} size={260}/>{live.ms!=null&&<Timer live={live}/>}</div>}
    <p><b>Present: {live.rows.filter((r:any)=>r.status==='accepted').length}</b></p>
    {live.status==='active'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'close'})}>Close session</button>}
    <table><tbody>{live.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td>{r.status==='flagged'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'approve',att:r.id})}>Approve</button>}</td></tr>)}</tbody></table></div>}
@@ -41,3 +41,13 @@ function CourseRow({c}:{c:any}){
     <button className="sec" style={{width:'100%',textAlign:'left'}} onClick={()=>pick(s.id)}>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
     {sel===s.id&&(!det?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
    </div>)}</div>}</div>}
+
+const QR_WINDOW=5000; // must match WINDOW in lib/qr.ts
+function Timer({live}:{live:any}){
+ const [end,setEnd]=useState(0),[now,setNow]=useState(Date.now());
+ useEffect(()=>{setEnd(Date.now()+live.ms)},[live]);
+ useEffect(()=>{const i=setInterval(()=>setNow(Date.now()),100);return()=>clearInterval(i)},[]);
+ const left=Math.max(0,end-now),pct=Math.min(100,100*left/QR_WINDOW);
+ return <div style={{marginTop:8}}>
+  <div style={{height:8,background:'#e4ece7',borderRadius:4,overflow:'hidden'}}><div style={{height:8,width:pct+'%',background:left<1500?'#d9534f':'#0b6b3a',transition:'width .1s linear'}}/></div>
+  <div style={{textAlign:'center',marginTop:4,fontWeight:600,color:left<1500?'#d9534f':'#0b6b3a'}}>New code in {(left/1000).toFixed(1)}s</div></div>}
