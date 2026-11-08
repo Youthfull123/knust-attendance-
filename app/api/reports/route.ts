@@ -10,16 +10,15 @@ async function pdf(title:string,sub:string,head:string[],data:any[][]){
 const send=(body:any,type:string,name:string)=>new Response(body,{headers:{'content-type':type,'content-disposition':`attachment; filename="${name}"`}});
 export async function GET(r:Request){const u:any=await me();if(!u)return new Response('auth',{status:401});
  const p=new URL(r.url).searchParams,fmt=p.get('format'),sess=p.get('session');
- if(sess){ // ---- one session ----
+ if(sess){ // ---- one session (accepted students only) ----
   const [s]=await q(`select s.id,s.started_at,c.code,c.title,v.name venue from sessions s join courses c on c.id=s.course_id join venues v on v.id=s.venue_id where s.id=$1 and c.lecturer_id=$2`,[sess,u.uid]);
   if(!s)return new Response('404',{status:404});
-  const rows=await q('select student_id,status,reason,round(dist) dist,created_at from attendance where session_id=$1 order by id',[sess]);
-  const head=['Student ID','Status','Reason','Distance (m)','Time'];
-  const data=rows.map((x:any)=>[x.student_id,x.status,x.reason,x.dist,new Date(x.created_at).toLocaleTimeString()]);
+  const rows=await q("select student_id,round(dist) dist,created_at from attendance where session_id=$1 and status='accepted' order by id",[sess]);
+  const head=['No.','Student ID','Distance (m)','Time'];
+  const data=rows.map((x:any,i:number)=>[i+1,x.student_id,x.dist,new Date(x.created_at).toLocaleTimeString()]);
   const name=`${s.code}-session-${new Date(s.started_at).toISOString().slice(0,16).replace(/[:T]/g,'-')}`.replace(/\s+/g,'_');
   if(fmt==='csv')return send(csv([head,...data]),'text/csv',name+'.csv');
-  const present=rows.filter((x:any)=>x.status==='accepted').length;
-  return send(await pdf(`${s.code} ${s.title||''} - Session Attendance`,`${new Date(s.started_at).toLocaleString()} | ${s.venue} | ${present} present, ${rows.length-present} flagged/rejected`,head,data),'application/pdf',name+'.pdf')}
+  return send(await pdf(`${s.code} ${s.title||''} - Session Attendance`,`${new Date(s.started_at).toLocaleString()} | ${s.venue} | ${rows.length} present`,head,data),'application/pdf',name+'.pdf')}
  // ---- whole course ----
  const c=p.get('course');const [co]=await q('select * from courses where id=$1 and lecturer_id=$2',[c,u.uid]);if(!co)return new Response('404',{status:404});
  const rows=await q(`with st as(select student_id from enrolments where course_id=$1 union select a.student_id from attendance a join sessions s on s.id=a.session_id where s.course_id=$1 and a.status='accepted')
