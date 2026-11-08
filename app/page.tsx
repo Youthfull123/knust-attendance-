@@ -38,7 +38,8 @@ function CourseRow({c}:{c:any}){
    <span style={{marginLeft:10}}><a href={`/api/reports?course=${c.id}&format=csv`}>CSV</a> · <a href={`/api/reports?course=${c.id}&format=pdf`}>PDF</a></span></div>
   {open&&<div style={{paddingLeft:14}}>
    {!ss?<p>Loading…</p>:!Array.isArray(ss)||!ss.length?<p>No sessions yet.</p>:ss.map((s:any,i:number)=><div key={s.id}>
-    <button className="sec" style={{width:'100%',textAlign:'left'}} onClick={()=>pick(s.id)}>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
+    <div className="bar"><button className="sec" style={{flex:1,textAlign:'left'}} onClick={()=>pick(s.id)}>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
+ <span style={{marginLeft:10,whiteSpace:'nowrap'}}><a href={`/api/reports?session=${s.id}&format=pdf`}>PDF</a> · <a href={`/api/reports?session=${s.id}&format=csv`}>CSV</a></span></div>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
     {sel===s.id&&(!det?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
    </div>)}</div>}</div>}
 
