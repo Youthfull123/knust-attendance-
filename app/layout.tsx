@@ -1,4 +1,4 @@
-export const metadata={title:'KNUST Attendance Site | Smart QR Lecture Attendance',description:'Secure lecture attendance for KNUST using rotating QR codes, face duplicate checks and location verification.',verification:{google:'PASTE_CODE_HERE'}};
+export const metadata={title:'KNUST Attendance Site | Smart QR Lecture Attendance',description:'Secure lecture attendance for KNUST using rotating QR codes, face duplicate checks and location verification.',verification:{google:'<meta name="google-site-verification" content="EhWnsAq7Jla6vbn3CwRCbxxWseIH3tZhu5LtvG_zuNU" />'}};
 export default function L({children}:{children:React.ReactNode}){return <html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style={{margin:0,font:'15px system-ui,sans-serif',background:'#f2f6f3',color:'#1a1a1a'}}><style>{`
 input,select,textarea{font:inherit;padding:10px;margin:4px 0;border:1px solid #c9d3cc;border-radius:8px;background:#fff}
 button{font:inherit;padding:10px 16px;margin:4px 0;border:0;border-radius:8px;background:#0b6b3a;color:#fff;cursor:pointer;font-weight:600}
