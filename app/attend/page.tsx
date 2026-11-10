@@ -19,8 +19,11 @@ export default function Attend(){
   setMsg('Loading face check…');
   // @ts-ignore
   const f=await import('@vladmandic/face-api/dist/face-api.esm.js');
+  try{await f.tf.setBackend('webgl')}catch{try{await f.tf.setBackend('cpu')}catch{}}
+  try{await f.tf.ready()}catch{}
   const L=(u:string)=>Promise.all([f.nets.ssdMobilenetv1,f.nets.faceLandmark68Net,f.nets.faceRecognitionNet].map((n:any)=>n.loadFromUri(u)));
-  try{await L('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model')}catch{await L('/models')}
+  const T=(p:Promise<any>,ms:number)=>Promise.race([p,new Promise((_,j)=>setTimeout(()=>j(new Error('timeout')),ms))]);
+  try{await T(L('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model'),20000)}catch{setMsg('Loading face check (backup)…');await T(L('/models'),60000)}
   const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});v.current!.srcObject=s;await v.current!.play();
   const dir=Math.random()<.5?'left':'right';setMsg(`Look straight at the camera, then slowly turn your head to your ${dir}.`);
   let face:number[]|null=null;
