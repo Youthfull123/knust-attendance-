@@ -2,6 +2,7 @@ import {Pool} from 'pg';
 const p=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_URL?.includes('neon')?{rejectUnauthorized:false}:undefined});
 const SCHEMA=`
 create table if not exists users(id serial primary key,email text unique not null,name text,pass text not null,role text not null default 'lecturer');
+alter table users add column if not exists active boolean not null default true;
 create table if not exists venues(id serial primary key,name text not null,lat float8 not null,lng float8 not null,radius int not null default 60,owner_id int references users(id));
 alter table venues add column if not exists owner_id int references users(id);
 alter table venues drop constraint if exists venues_name_key;
