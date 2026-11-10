@@ -1,5 +1,6 @@
 import {q} from '@/lib/db';import {sign,verify} from '@/lib/auth';import {valid,dist,euclid} from '@/lib/qr';
 const FACE_THRESHOLD=0.5; // face-api 128-d descriptors: distance <0.5 ≈ same person
+const cache=new Map<string,Promise<any[]>>(); // per-session faces kept in memory
 const J=(b:any,s=200)=>Response.json(b,{status:s});
 const active=async(sid:string)=>(await q("select * from sessions where id=$1 and status='active' and ends_at>now()",[sid]))[0];
 export async function POST(r:Request){const b=await r.json();
@@ -18,7 +19,7 @@ export async function POST(r:Request){const b=await r.json();
  if(!okFace){await rec('rejected','No valid face data');return J({error:'Face check failed.'},400)}
  if(!isFinite(d)||acc>200||d-Math.min(acc,100)>s.radius){await rec('rejected',`Outside venue (${Math.round(d)}m, accuracy ${Math.round(acc)}m)`);return J({error:'You are not at the lecture venue.'},403)}
  const [done]=await q("select 1 from attendance where session_id=$1 and student_id=$2 and status='accepted'",[b.sid,id]);if(done)return J({ok:1,message:'Already recorded.'});
- const others=await q("select student_id,face from attendance where session_id=$1 and status='accepted' and student_id<>$2 and face is not null",[b.sid,id]);
- const hit=others.find((o:any)=>euclid(face,o.face)<FACE_THRESHOLD); // real face matching between submissions in this session
- if(hit){await rec('flagged',`Same face as ${hit.student_id}`);return J({error:'This face was already used for another student ID. Your attempt was flagged for lecturer review.'},409)}
- await rec('accepted','Verified',true);return J({ok:1,message:'Attendance recorded.'})}
+ let p=cache.get(b.sid);if(!p){p=q("select student_id id,face f from attendance where session_id=$1 and status='accepted' and face is not null",[b.sid]);cache.set(b.sid,p)}
+ const fc=await p;const hit=fc.find((o:any)=>o.id!==id&&euclid(face,o.f)<FACE_THRESHOLD);
+ if(hit){await rec('flagged',`Same face as ${hit.id}`);return J({error:'This face was already used for another student ID. Your attempt was flagged for lecturer review.'},409)}
+ fc.push({id,f:face});await rec('accepted','Verified',true);return J({ok:1,message:'Attendance recorded.'})}
