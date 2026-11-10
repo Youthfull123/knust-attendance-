@@ -13,7 +13,7 @@ export async function GET(r:Request){const u:any=await me();if(!u)return Respons
  return Response.json({status:live?'active':'closed',token:live?token(s.secret,id):null,ms:live?msLeft():null,rows,expected:c.n})}
 export async function POST(r:Request){const u:any=await me();if(!u)return Response.json({error:'auth'},{status:401});
  const {course,venue,radius,minutes}=await r.json();const [c]=await q('select id from courses where id=$1 and lecturer_id=$2',[course,u.uid]);if(!c)return Response.json({error:'404'},{status:404});
- const [v]=await q('select radius from venues where id=$1',[venue]);if(!v)return Response.json({error:'Pick a venue'},{status:400});
+ const [v]=await q('select radius from venues where id=$1 and owner_id=$2',[venue,u.uid]);if(!v)return Response.json({error:'Pick a venue'},{status:400});
  const [s]=await q(`insert into sessions(course_id,venue_id,radius,secret,ends_at) values($1,$2,$3,$4,now()+($5||' minutes')::interval) returning id`,[course,venue,radius||v.radius,randomBytes(32).toString('hex'),String(minutes||15)]);
  return Response.json({id:s.id})}
 export async function PATCH(r:Request){const u:any=await me();if(!u)return Response.json({error:'auth'},{status:401});
