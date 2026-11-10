@@ -34,7 +34,11 @@ export default function Attend(){
   if(!D.current.face){setMsg('Liveness check failed. Rescan to retry.');setStep('err');return}
   setMsg('');setStep('id');
  }catch(e:any){setMsg('Face check error: '+(e?.message||e)+'. Close other camera apps, allow the camera, and rescan.');setStep('err')}})()},[]);
- const submit=async()=>{if(step!=='id')return;setStep('wait');setMsg('Submitting…');
+  const submit=async()=>{if(step!=='id')return;setStep('wait');setMsg('Checking your location…');
+  const g:any=await new Promise(res=>navigator.geolocation.getCurrentPosition(res,()=>res(null),{enableHighAccuracy:true,timeout:15000,maximumAge:0}));
+  if(!g){setMsg('Could not read your location. Allow location access and try again.');setStep('id');return}
+  Object.assign(D.current,{lat:g.coords.latitude,lng:g.coords.longitude,acc:g.coords.accuracy});
+  setMsg('Submitting…');
   const r=await fetch('/api/attend',{method:'POST',body:JSON.stringify({step:'submit',studentId:id,...D.current})});const j=await r.json();setStep('done');setMsg(j.message||j.error)};
  return <div className="card" style={{maxWidth:420,margin:'20px auto'}}><video ref={v} playsInline muted style={{width:'100%',maxWidth:320,display:step==='init'?'block':'none',transform:'scaleX(-1)'}}/>
   <p>{msg}</p>{step==='id'&&<div><input value={id} onChange={e=>setId(e.target.value)} placeholder="Student ID"/><br/><button onClick={submit}>Submit Attendance</button></div>}</div>}
