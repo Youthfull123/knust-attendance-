@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';import {QRCodeSVG} from 'qrcode.react';
-const api=(u:string,m='GET',b?:any)=>fetch(u,{method:m,body:b&&JSON.stringify(b)}).then(r=>r.json());
+const api=(u:string,m='GET',b?:any)=>fetch(u,{method:m,headers:{'content-type':'application/json'},body:b&&JSON.stringify(b)}).then(async r=>{const t=await r.text();let j:any;try{j=JSON.parse(t)}catch{j={error:`Server error ${r.status}`}}if(m==='DELETE'&&j.error)alert(j.error);return j});
 const QR_WINDOW=10000; // must match WINDOW in lib/qr.ts
 const RED={background:'#fdecea',color:'#c0392b'};
 
@@ -25,22 +25,30 @@ export default function Home(){
  return <div className="wrap">
   <div className="bar"><h2 style={{color:'#0b6b3a',margin:0}}>KNUST Attendance</h2><button className="sec" onClick={async()=>{await api('/api/auth','POST',{action:'logout'});setAuth(false)}}>Log out</button></div>
 
+  {/* 1. New course */}
   <div className="card"><h3>New course</h3><form onSubmit={async e=>{e.preventDefault();const f=e.target as any;await api('/api/courses','POST',fd(f));f.reset();load()}}><input name="code" placeholder="Course code e.g. COE 361" required/> <input name="title" placeholder="Course title"/> <button>Create course</button></form></div>
 
-  <div className="card"><h3>Start attendance</h3><form onSubmit={async e=>{e.preventDefault();const r=await api('/api/sessions','POST',fd(e.target));r.id?setSid(r.id):setErr(r.error)}}>
-   <select name="course" required>{courses.map(c=><option key={c.id} value={c.id}>{c.code}</option>)}</select> <select name="venue" required>{venues.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select><br/>
-   <input name="radius" type="number" placeholder="Allowed distance m (optional)"/> <input name="minutes" type="number" defaultValue={15} style={{width:70}}/> minutes <button>Start Attendance</button></form>
-   <hr style={{border:0,borderTop:'1px solid #e3e9e5',margin:'14px 0'}}/><b>Venue missing or wrong location?</b><p style={{margin:'4px 0',color:'#555'}}>Stand inside the lecture hall, type its name, then tap the button.</p>
+  {/* 2. Venue missing or wrong location? */}
+  <div className="card"><h3>Venue missing or wrong location?</h3><p style={{margin:'4px 0',color:'#555'}}>Stand inside the lecture hall, type its name, then tap the button.</p>
    <form onSubmit={saveVenue}><input name="name" placeholder="Venue name"/> <input name="radius" type="number" placeholder="Distance m (60)" style={{width:130}}/> <button className="sec">Save my current location as venue</button></form><p style={{color:'#0b6b3a'}}>{vmsg}</p></div>
 
-  <div className="card"><h3>Venues</h3><table><tbody>{venues.map(v=><tr key={v.id}><td>{v.name}</td><td>{v.radius} m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delVenue(v)}>Delete</button></td></tr>)}</tbody></table></div>
+  {/* 3. Start attendance */}
+  <div className="card"><h3>Start attendance</h3><form onSubmit={async e=>{e.preventDefault();setErr('');const r=await api('/api/sessions','POST',fd(e.target));r.id?setSid(r.id):setErr(r.error)}}>
+   <select name="course" required>{courses.map(c=><option key={c.id} value={c.id}>{c.code}</option>)}</select> <select name="venue" required>{venues.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select><br/>
+   <input name="radius" type="number" placeholder="Allowed distance m (optional)"/> <input name="minutes" type="number" defaultValue={15} style={{width:70}}/> minutes <button>Start Attendance</button></form>
+   {err&&<p style={{color:'crimson'}}>{err}</p>}</div>
 
+  {/* 4. Live QR code */}
   {sid&&live&&live.rows&&<div className="card"><h3>Live session ({live.status})</h3>
    {live.token&&<div style={{width:260}}><QRCodeSVG value={`${location.origin}/attend?s=${sid}&t=${live.token}`} size={260}/>{live.ms!=null&&<Timer live={live}/>}</div>}
    <p><b>Present: {live.rows.filter((r:any)=>r.status==='accepted').length}</b></p>
    {live.status==='active'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'close'})}>Close session</button>} <button style={RED} onClick={delLive}>Delete session</button>
    <table><tbody>{live.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td>{r.status==='flagged'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'approve',att:r.id})}>Approve</button>}</td></tr>)}</tbody></table></div>}
 
+  {/* 5. Venues */}
+  <div className="card"><h3>Venues</h3><table><tbody>{venues.map(v=><tr key={v.id}><td>{v.name}</td><td>{v.radius} m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delVenue(v)}>Delete</button></td></tr>)}</tbody></table></div>
+
+  {/* 6. Courses & reports */}
   <div className="card"><h3>Courses & reports</h3>{courses.map(c=><CourseRow key={c.id} c={c} reload={load} gone={gone}/>)}</div>
  </div>}
 
