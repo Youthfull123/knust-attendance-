@@ -10,7 +10,8 @@ export default function Attend(){
   D.current={sid,ticket:j.ticket};setMsg('Loading face models…');
   // @ts-ignore
   const f=await import('@vladmandic/face-api/dist/face-api.esm.js');
-  await Promise.all([f.nets.ssdMobilenetv1,f.nets.faceLandmark68Net,f.nets.faceRecognitionNet].map((n:any)=>n.loadFromUri('/models')));
+  const L=(u:string)=>Promise.all([f.nets.ssdMobilenetv1,f.nets.faceLandmark68Net,f.nets.faceRecognitionNet].map((n:any)=>n.loadFromUri(u)));
+try{await L('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model')}catch{await L('/models')}
   const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});v.current!.srcObject=s;await v.current!.play();
   const dir=Math.random()<.5?'left':'right';setMsg(`Look straight at the camera, then slowly turn your head to your ${dir}.`);
   let face:number[]|null=null;
