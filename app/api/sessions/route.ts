@@ -21,3 +21,8 @@ export async function PATCH(r:Request){const u:any=await me();if(!u)return Respo
  if(action==='close'){await q("update sessions set status='closed' where id=$1",[id]);await q('update attendance set face=null where session_id=$1',[id])}
  if(action==='approve')try{await q("update attendance set status='accepted',reason='Approved by lecturer' where id=$1 and session_id=$2",[att,id])}catch{}
  return Response.json({ok:1})}
+export async function DELETE(r:Request){const u:any=await me();if(!u)return Response.json({error:'auth'},{status:401});
+ const {id,att}=await r.json();const [s]=await own(id,u.uid);if(!s)return Response.json({error:'404'},{status:404});
+ if(att)await q('delete from attendance where id=$1 and session_id=$2',[att,id]); // one attendance record
+ else{await q('delete from attendance where session_id=$1',[id]);await q('delete from sessions where id=$1',[id])} // whole session
+ return Response.json({ok:1})}
