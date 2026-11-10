@@ -1,14 +1,18 @@
 'use client';
 import {useEffect,useState} from 'react';import {QRCodeSVG} from 'qrcode.react';
 const api=(u:string,m='GET',b?:any)=>fetch(u,{method:m,body:b&&JSON.stringify(b)}).then(r=>r.json());
-const QR_WINDOW=5000; // must match WINDOW in lib/qr.ts
+const QR_WINDOW=10000; // must match WINDOW in lib/qr.ts
+const RED={background:'#fdecea',color:'#c0392b'};
 
 export default function Home(){
  const [auth,setAuth]=useState(false),[mode,setMode]=useState('login'),[courses,setC]=useState<any[]>([]),[venues,setV]=useState<any[]>([]),[sid,setSid]=useState(''),[live,setL]=useState<any>(null),[err,setErr]=useState(''),[vmsg,setVmsg]=useState('');
  const load=async()=>{const c=await api('/api/courses');if(c.error)return setAuth(false);setAuth(true);setC(c);setV(await api('/api/venues'))};
  useEffect(()=>{load()},[]);
- useEffect(()=>{if(!sid)return;let on=true,t:any;const f=async()=>{const t0=Date.now(),d=await api('/api/sessions?id='+sid);if(!on)return;setL(d);const lag=(Date.now()-t0)/2;t=setTimeout(f,d.ms!=null?Math.max(100,Math.min(2000,d.ms-lag+40)):2000)};f();return()=>{on=false;clearTimeout(t)}},[sid]);
+ useEffect(()=>{if(!sid){setL(null);return}let on=true,t:any;const f=async()=>{const t0=Date.now(),d=await api('/api/sessions?id='+sid);if(!on)return;setL(d);const lag=(Date.now()-t0)/2;t=setTimeout(f,d.ms!=null?Math.max(100,Math.min(2000,d.ms-lag+40)):2000)};f();return()=>{on=false;clearTimeout(t)}},[sid]);
  const fd=(f:any)=>Object.fromEntries(new FormData(f));
+ const gone=(id:string)=>setSid(s=>(!id||s===id)?'':s);
+ const delVenue=async(v:any)=>{if(!confirm(`Delete venue "${v.name}"?`))return;const r=await api('/api/venues','DELETE',{id:v.id});if(r.error)alert(r.error);load()};
+ const delLive=async()=>{if(!confirm('Delete this session and all its attendance records?'))return;await api('/api/sessions','DELETE',{id:sid});setSid('');load()};
  const saveVenue=(e:any)=>{e.preventDefault();const f=e.target,name=String(new FormData(f).get('name')||'').trim();if(!name)return;setVmsg('Getting your location…');
   navigator.geolocation.getCurrentPosition(async g=>{await api('/api/venues','POST',{name,lat:g.coords.latitude,lng:g.coords.longitude,radius:Number(new FormData(f).get('radius'))||60});setVmsg(`Saved "${name}" (GPS accuracy ±${Math.round(g.coords.accuracy)} m).`);f.reset();load()},()=>setVmsg('Location permission denied.'),{enableHighAccuracy:true,timeout:20000})};
 
@@ -29,27 +33,32 @@ export default function Home(){
    <hr style={{border:0,borderTop:'1px solid #e3e9e5',margin:'14px 0'}}/><b>Venue missing or wrong location?</b><p style={{margin:'4px 0',color:'#555'}}>Stand inside the lecture hall, type its name, then tap the button.</p>
    <form onSubmit={saveVenue}><input name="name" placeholder="Venue name"/> <input name="radius" type="number" placeholder="Distance m (60)" style={{width:130}}/> <button className="sec">Save my current location as venue</button></form><p style={{color:'#0b6b3a'}}>{vmsg}</p></div>
 
-  {sid&&live&&<div className="card"><h3>Live session ({live.status})</h3>
+  <div className="card"><h3>Venues</h3><table><tbody>{venues.map(v=><tr key={v.id}><td>{v.name}</td><td>{v.radius} m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delVenue(v)}>Delete</button></td></tr>)}</tbody></table></div>
+
+  {sid&&live&&live.rows&&<div className="card"><h3>Live session ({live.status})</h3>
    {live.token&&<div style={{width:260}}><QRCodeSVG value={`${location.origin}/attend?s=${sid}&t=${live.token}`} size={260}/>{live.ms!=null&&<Timer live={live}/>}</div>}
    <p><b>Present: {live.rows.filter((r:any)=>r.status==='accepted').length}</b></p>
-   {live.status==='active'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'close'})}>Close session</button>}
+   {live.status==='active'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'close'})}>Close session</button>} <button style={RED} onClick={delLive}>Delete session</button>
    <table><tbody>{live.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td>{r.status==='flagged'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'approve',att:r.id})}>Approve</button>}</td></tr>)}</tbody></table></div>}
 
-  <div className="card"><h3>Courses & reports</h3>{courses.map(c=><CourseRow key={c.id} c={c}/>)}</div>
+  <div className="card"><h3>Courses & reports</h3>{courses.map(c=><CourseRow key={c.id} c={c} reload={load} gone={gone}/>)}</div>
  </div>}
 
-function CourseRow({c}:{c:any}){
+function CourseRow({c,reload,gone}:{c:any,reload:()=>void,gone:(id:string)=>void}){
  const [open,setOpen]=useState(false),[ss,setSs]=useState<any[]|null>(null),[sel,setSel]=useState(''),[det,setDet]=useState<any>(null);
  const toggle=async()=>{const o=!open;setOpen(o);if(o)setSs(await api('/api/sessions?course='+c.id))};
  const pick=async(id:string)=>{if(sel===id){setSel('');return}setSel(id);setDet(null);setDet(await api('/api/sessions?id='+id))};
+ const delCourse=async()=>{if(!confirm(`Delete ${c.code} with ALL its sessions and attendance? This cannot be undone.`))return;await api('/api/courses','DELETE',{id:c.id});gone('');reload()};
+ const delSess=async(s:any)=>{if(!confirm('Delete this session and all its attendance records?'))return;await api('/api/sessions','DELETE',{id:s.id});gone(s.id);setSel('');setSs(await api('/api/sessions?course='+c.id))};
+ const delAtt=async(sessId:string,att:number)=>{if(!confirm('Remove this attendance record?'))return;await api('/api/sessions','DELETE',{id:sessId,att});setDet(await api('/api/sessions?id='+sessId));setSs(await api('/api/sessions?course='+c.id))};
  return <div style={{borderBottom:'1px solid #e3e9e5',padding:'8px 0'}}>
   <div className="bar"><button className="sec" onClick={toggle} style={{flex:1,textAlign:'left'}}>{open?'▼':'▶'} {c.code} {c.title}</button>
-   <span style={{marginLeft:10}}><a href={`/api/reports?course=${c.id}&format=csv`}>CSV</a> · <a href={`/api/reports?course=${c.id}&format=pdf`}>PDF</a></span></div>
+   <span style={{marginLeft:10,whiteSpace:'nowrap'}}><a href={`/api/reports?course=${c.id}&format=csv`}>CSV</a> · <a href={`/api/reports?course=${c.id}&format=pdf`}>PDF</a> <button style={RED} onClick={delCourse}>Delete</button></span></div>
   {open&&<div style={{paddingLeft:14}}>
    {!ss?<p>Loading…</p>:!Array.isArray(ss)||!ss.length?<p>No sessions yet.</p>:ss.map((s:any,i:number)=><div key={s.id}>
     <div className="bar"><button className="sec" style={{flex:1,textAlign:'left'}} onClick={()=>pick(s.id)}>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
-     <span style={{marginLeft:10,whiteSpace:'nowrap'}}><a href={`/api/reports?session=${s.id}&format=pdf`}>PDF</a> · <a href={`/api/reports?session=${s.id}&format=csv`}>CSV</a></span></div>
-    {sel===s.id&&(!det?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
+     <span style={{marginLeft:10,whiteSpace:'nowrap'}}><a href={`/api/reports?session=${s.id}&format=pdf`}>PDF</a> · <a href={`/api/reports?session=${s.id}&format=csv`}>CSV</a> <button style={RED} onClick={()=>delSess(s)}>Delete</button></span></div>
+    {sel===s.id&&(!det||!det.rows?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delAtt(s.id,r.id)}>✕</button></td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
    </div>)}</div>}</div>}
 
 function Timer({live}:{live:any}){
