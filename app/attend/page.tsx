@@ -24,15 +24,16 @@ export default function Attend(){
   const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});v.current!.srcObject=s;await v.current!.play();
   const dir=Math.random()<.5?'left':'right';setMsg(`Look straight at the camera, then slowly turn your head to your ${dir}.`);
   let face:number[]|null=null;
-  for(let i=0;i<150;i++){await sleep(200);
-   const d=await f.detectSingleFace(v.current!).withFaceLandmarks().withFaceDescriptor();if(!d)continue;
+  for(let i=0;i<300;i++){await sleep(150);
+   const d=await f.detectSingleFace(v.current!).withFaceLandmarks().withFaceDescriptor();
+   if(!d){setMsg('No face found. Hold the phone at eye level in good light.');continue}
    const P=d.landmarks.positions,ratio=(P[30].x-P[0].x)/(P[16].x-P[0].x);
-   if(!face&&ratio>.44&&ratio<.56)face=Array.from(d.descriptor as Float32Array);
-   if(face&&(dir==='left'?ratio>.64:ratio<.36)){D.current.face=face;break}}
+   if(!face&&ratio>.40&&ratio<.60){face=Array.from(d.descriptor as Float32Array);setMsg(`Now slowly turn your head to your ${dir}.`)}
+   if(face&&(dir==='left'?ratio>.60:ratio<.40)){D.current.face=face;break}}
   s.getTracks().forEach((t:any)=>t.stop());
   if(!D.current.face){setMsg('Liveness check failed. Rescan to retry.');setStep('err');return}
   setMsg('');setStep('id');
- }catch(e){setMsg('Camera/face check unavailable. Ask your lecturer for assisted verification.');setStep('err')}})()},[]);
+ }catch(e:any){setMsg('Face check error: '+(e?.message||e)+'. Close other camera apps, allow the camera, and rescan.');setStep('err')}})()},[]);
  const submit=async()=>{if(step!=='id')return;setStep('wait');setMsg('Submitting…');
   const r=await fetch('/api/attend',{method:'POST',body:JSON.stringify({step:'submit',studentId:id,...D.current})});const j=await r.json();setStep('done');setMsg(j.message||j.error)};
  return <div className="card" style={{maxWidth:420,margin:'20px auto'}}><video ref={v} playsInline muted style={{width:'100%',maxWidth:320,display:step==='init'?'block':'none',transform:'scaleX(-1)'}}/>
