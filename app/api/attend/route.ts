@@ -16,14 +16,14 @@ export async function POST(r:Request){const b=await r.json();
  if(b.step==='begin'){const s=b.sid&&await getSession(b.sid).catch(()=>null);
   if(!isOpen(s))return J({error:'Attendance is not open.'},404);
   if(!valid(s.secret,b.sid,b.t))return J({error:'QR code expired.'},403); // server-side token check
-    return J({ticket:await sign({sid:b.sid,typ:'t'},'10m'),programs:s.programs||[]})}
+  return J({ticket:await sign({sid:b.sid,typ:'t'},'10m'),programs:s.programs||[]})}
  if(!await ticketOk(b))return J({error:'Session expired. Rescan the QR code.'},403);
  const s=await getSession(b.sid);if(!isOpen(s))return J({error:'Attendance has closed.'},404);
  const w=inside(await getVenue(s.venue_id),s.radius,b);
  if(b.step==='where')return w.ok?J({ok:1}):J({error:where(w)},403); // early location check, right after scanning
  const id=String(b.studentId||'').trim().toUpperCase();if(!/^[A-Z0-9\/\-]{4,20}$/.test(id))return J({error:'Enter a valid student ID.'},400);
  const face=b.face,okFace=Array.isArray(face)&&face.length===128&&face.every((x:any)=>typeof x==='number'&&isFinite(x));
-  const progs:string[]=s.programs||[],prog=String(b.program||'').trim();
+ const progs:string[]=s.programs||[],prog=String(b.program||'').trim();
  if(progs.length&&!progs.includes(prog))return J({error:'Please choose your programme.'},400);
  const rec=(st:string,why:string,keep=false)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,face,program) values($1,$2,$3,$4,$5,$6,$7,$8)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,w.acc,keep?face:null,progs.length?prog:null]);
  const enr=await getEnrol(s.course_id);
