@@ -26,7 +26,7 @@ export default function Home(){
   <div className="bar"><h2 style={{color:'#0b6b3a',margin:0}}>KNUST Attendance</h2><button className="sec" onClick={async()=>{await api('/api/auth','POST',{action:'logout'});setAuth(false)}}>Log out</button></div>
 
   {/* 1. New course */}
-  <div className="card"><h3>New course</h3><form onSubmit={async e=>{e.preventDefault();const f=e.target as any;await api('/api/courses','POST',fd(f));f.reset();load()}}><input name="code" placeholder="Course code e.g. COE 361" required/> <input name="title" placeholder="Course title"/> <button>Create course</button></form></div>
+  <div className="card"><h3>New course</h3><form onSubmit={async e=>{e.preventDefault();const f=e.target as any;await api('/api/courses','POST',fd(f));f.reset();load()}}><input name="code" placeholder="Course code e.g. COE 361" required/> <input name="title" placeholder="Course title"/><br/><input name="programs" placeholder="Programmes, separated by commas (optional)" style={{width:'100%',boxSizing:'border-box'}}/><br/><button>Create course</button></form></div>
 
   {/* 2. Venue missing or wrong location? */}
   <div className="card"><h3>Venue missing or wrong location?</h3><p style={{margin:'4px 0',color:'#555'}}>Stand inside the lecture hall, type its name, then tap the button.</p>
@@ -43,7 +43,7 @@ export default function Home(){
    {live.token&&<div style={{width:260}}><QRCodeSVG value={`${location.origin}/attend?s=${sid}&t=${live.token}`} size={260}/>{live.ms!=null&&<Timer live={live}/>}</div>}
    <p><b>Present: {live.rows.filter((r:any)=>r.status==='accepted').length}</b></p>
    {live.status==='active'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'close'})}>Close session</button>} <button style={RED} onClick={delLive}>Delete session</button>
-   <table><tbody>{live.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td>{r.status==='flagged'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'approve',att:r.id})}>Approve</button>}</td></tr>)}</tbody></table></div>}
+   <table><tbody>{live.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.program}</td><td>{r.dist}m</td><td>{r.status==='flagged'&&<button onClick={()=>api('/api/sessions','PATCH',{id:sid,action:'approve',att:r.id})}>Approve</button>}</td></tr>)}</tbody></table></div>}
 
   {/* 5. Venues */}
   <div className="card"><h3>Venues</h3><table><tbody>{venues.map(v=><tr key={v.id}><td>{v.name}</td><td>{v.radius} m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delVenue(v)}>Delete</button></td></tr>)}</tbody></table></div>
@@ -57,16 +57,19 @@ function CourseRow({c,reload,gone}:{c:any,reload:()=>void,gone:(id:string)=>void
  const toggle=async()=>{const o=!open;setOpen(o);if(o)setSs(await api('/api/sessions?course='+c.id))};
  const pick=async(id:string)=>{if(sel===id){setSel('');return}setSel(id);setDet(null);setDet(await api('/api/sessions?id='+id))};
  const delCourse=async()=>{if(!confirm(`Delete ${c.code} with ALL its sessions and attendance? This cannot be undone.`))return;await api('/api/courses','DELETE',{id:c.id});gone('');reload()};
+ const editProgs=async()=>{const p=prompt('Programmes for '+c.code+', separated by commas (leave empty for none):',(c.programs||[]).join(', '));if(p===null)return;await api('/api/courses','PATCH',{id:c.id,programs:p});reload()};
  const delSess=async(s:any)=>{if(!confirm('Delete this session and all its attendance records?'))return;await api('/api/sessions','DELETE',{id:s.id});gone(s.id);setSel('');setSs(await api('/api/sessions?course='+c.id))};
  const delAtt=async(sessId:string,att:number)=>{if(!confirm('Remove this attendance record?'))return;await api('/api/sessions','DELETE',{id:sessId,att});setDet(await api('/api/sessions?id='+sessId));setSs(await api('/api/sessions?course='+c.id))};
  return <div style={{borderBottom:'1px solid #e3e9e5',padding:'8px 0'}}>
   <div className="bar"><button className="sec" onClick={toggle} style={{flex:1,textAlign:'left'}}>{open?'▼':'▶'} {c.code} {c.title}</button>
    <span style={{marginLeft:10,whiteSpace:'nowrap'}}><a href={`/api/reports?course=${c.id}&format=csv`}>CSV</a> · <a href={`/api/reports?course=${c.id}&format=pdf`}>PDF</a> <button style={RED} onClick={delCourse}>Delete</button></span></div>
+  <div style={{padding:'2px 4px'}}><button className="sec" style={{fontSize:12,padding:'4px 8px'}} onClick={editProgs}>Edit programmes</button></div>{c.programs?.length>0&&<ProgLinks base={`/api/reports?course=${c.id}`} progs={c.programs}/>}
   {open&&<div style={{paddingLeft:14}}>
    {!ss?<p>Loading…</p>:!Array.isArray(ss)||!ss.length?<p>No sessions yet.</p>:ss.map((s:any,i:number)=><div key={s.id}>
     <div className="bar"><button className="sec" style={{flex:1,textAlign:'left'}} onClick={()=>pick(s.id)}>{sel===s.id?'▼':'▶'} Session {ss.length-i} · {new Date(s.started_at).toLocaleString()} · {s.venue} · {s.present} present{s.issues?` · ${s.issues} flagged/rejected`:''}</button>
      <span style={{marginLeft:10,whiteSpace:'nowrap'}}><a href={`/api/reports?session=${s.id}&format=pdf`}>PDF</a> · <a href={`/api/reports?session=${s.id}&format=csv`}>CSV</a> <button style={RED} onClick={()=>delSess(s)}>Delete</button></span></div>
-    {sel===s.id&&(!det||!det.rows?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.dist}m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delAtt(s.id,r.id)}>✕</button></td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
+    {c.programs?.length>0&&<ProgLinks base={`/api/reports?session=${s.id}`} progs={c.programs}/>}
+    {sel===s.id&&(!det||!det.rows?<p>Loading…</p>:<table><tbody>{det.rows.length?det.rows.map((r:any)=><tr key={r.id}><td>{r.student_id}</td><td>{r.status}</td><td>{r.reason}</td><td>{r.program}</td><td>{r.dist}m</td><td style={{textAlign:'right'}}><button style={RED} onClick={()=>delAtt(s.id,r.id)}>✕</button></td></tr>):<tr><td>No attempts in this session.</td></tr>}</tbody></table>)}
    </div>)}</div>}</div>}
 
 function Timer({live}:{live:any}){
@@ -77,3 +80,5 @@ function Timer({live}:{live:any}){
  return <div style={{marginTop:8}}>
   <div style={{height:8,background:'#e4ece7',borderRadius:4,overflow:'hidden'}}><div style={{height:8,width:pct+'%',background:left<1500?'#d9534f':'#0b6b3a',transition:'width .1s linear'}}/></div>
   <div style={{textAlign:'center',marginTop:4,fontWeight:600,color:left<1500?'#d9534f':'#0b6b3a'}}>New code in {(left/1000).toFixed(1)}s</div></div>}
+
+function ProgLinks({base,progs}:{base:string,progs:string[]}){return <div style={{fontSize:13,padding:'4px 2px'}}>By programme: {progs.map(p=><span key={p} style={{marginRight:12}}>{p}: <a href={`${base}&format=pdf&program=${encodeURIComponent(p)}`}>PDF</a> · <a href={`${base}&format=csv&program=${encodeURIComponent(p)}`}>CSV</a></span>)}</div>}
