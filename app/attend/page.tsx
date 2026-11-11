@@ -8,7 +8,7 @@ export default function Attend(){
   const p=new URLSearchParams(location.search),sid=p.get('s');
   let a=await post({step:'begin',sid,t:p.get('t')});
   if(!a.ok){setMsg(a.j.error+' Please rescan the QR code.');setStep('err');return}
-  if(step!=='id')return;if(progs.length&&!prog){setMsg('Choose your programme first.');return}setStep('wait');setMsg('Checking your location…');
+  D.current={sid,ticket:a.j.ticket};setProgs(a.j.programs||[]);
   setMsg('Allow location access when asked…');
   const g:any=await new Promise(res=>navigator.geolocation.getCurrentPosition(res,()=>res(null),{enableHighAccuracy:true,timeout:20000,maximumAge:0}));
   if(!g){setMsg('Location permission is required. Ask your lecturer for assisted verification.');setStep('err');return}
@@ -22,7 +22,7 @@ export default function Attend(){
   try{await f.tf.setBackend('webgl')}catch{try{await f.tf.setBackend('cpu')}catch{}}
   try{await f.tf.ready()}catch{}
   const L=(u:string)=>Promise.all([f.nets.ssdMobilenetv1,f.nets.faceLandmark68Net,f.nets.faceRecognitionNet].map((n:any)=>n.loadFromUri(u)));
-  const T=(p:Promise<any>,ms:number)=>Promise.race([p,new Promise((_,j)=>setTimeout(()=>j(new Error('timeout')),ms))]);
+  const T=(pr:Promise<any>,ms:number)=>Promise.race([pr,new Promise((_,j)=>setTimeout(()=>j(new Error('timeout')),ms))]);
   try{await T(L('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model'),20000)}catch{setMsg('Loading face check (backup)…');await T(L('/models'),60000)}
   const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});v.current!.srcObject=s;await v.current!.play();
   const dir=Math.random()<.5?'left':'right';setMsg(`Look straight at the camera, then slowly turn your head to your ${dir}.`);
@@ -37,7 +37,7 @@ export default function Attend(){
   if(!D.current.face){setMsg('Liveness check failed. Rescan to retry.');setStep('err');return}
   setMsg('');setStep('id');
  }catch(e:any){setMsg('Face check error: '+(e?.message||e)+'. Close other camera apps, allow the camera, and rescan.');setStep('err')}})()},[]);
-  const submit=async()=>{if(step!=='id')return;if(progs.length&&!prog){setMsg('Choose your programme first.');return}setStep('wait');setMsg('Checking your location…');
+ const submit=async()=>{if(step!=='id')return;if(progs.length&&!prog){setMsg('Choose your programme first.');return}setStep('wait');setMsg('Checking your location…');
   const g:any=await new Promise(res=>navigator.geolocation.getCurrentPosition(res,()=>res(null),{enableHighAccuracy:true,timeout:15000,maximumAge:0}));
   if(!g){setMsg('Could not read your location. Allow location access and try again.');setStep('id');return}
   Object.assign(D.current,{lat:g.coords.latitude,lng:g.coords.longitude,acc:g.coords.accuracy});
