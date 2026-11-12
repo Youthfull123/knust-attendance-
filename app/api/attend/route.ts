@@ -28,10 +28,13 @@ export async function POST(r:Request){const b=await r.json();
  const rec=(st:string,why:string,keep=false)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,face,program) values($1,$2,$3,$4,$5,$6,$7,$8)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,w.acc,keep?face:null,progs.length?prog:null]);
  const enr=await getEnrol(s.course_id);
  if(enr.size>0&&!enr.has(id)){await rec('rejected','Not enrolled in this course');return J({error:'You are not enrolled in this course.'},403)}
- if(!okFace){await rec('rejected','No valid face data');return J({error:'Face check failed.'},400)}
+ if(!b.noFace&&!okFace){await rec('rejected','No valid face data');return J({error:'Face check failed.'},400)}
  if(!w.ok){await rec('rejected',`Outside venue (${Math.round(w.d)}m, accuracy ${Math.round(w.acc)}m)`);return J({error:'You are not at the lecture venue.'},403)}
  const m=(r.headers.get('cookie')||'').match(new RegExp(`att_${b.sid}=([^;]+)`)); // same-device check
  if(m&&decodeURIComponent(m[1])!==id){await rec('flagged',`Same device already used for ${decodeURIComponent(m[1])}`);return J({error:'This device was already used for another student ID. Your attempt was flagged.'},409)}
+ if(b.noFace){ // camera could not read the face: kept for the lecturer to approve
+  await rec('flagged','Face check skipped (camera could not read face)');
+  return J({ok:1,message:'Recorded. Your lecturer will review and approve your attendance.'})}
  let p=faceC.get(b.sid);if(!p){p=q("select student_id id,face f from attendance where session_id=$1 and status='accepted' and face is not null",[b.sid]);faceC.set(b.sid,p)}
  const fc=await p; // faces kept in memory for the session
  if(fc.some((o:any)=>o.id===id))return J({ok:1,message:'Already recorded.'});
