@@ -1,5 +1,5 @@
 import {q} from '@/lib/db';import {sign,verify} from '@/lib/auth';import {valid,dist,euclid} from '@/lib/qr';
-const FACE_THRESHOLD=0.5; // lower = stricter. If the same person is NOT caught, raise to 0.55
+const FACE_THRESHOLD=0.30; // flag only when faces are more than ~70% alike (distance under 0.30). Lower = more forgiving, higher = stricter
 const J=(b:any,s=200,c?:string)=>new Response(JSON.stringify(b),{status:s,headers:{'content-type':'application/json',...(c?{'set-cookie':c}:{})}});
 type E<T>={t:number,v:Promise<T>};
 const memo=<T>(m:Map<string,E<T>>,k:string,ttl:number,f:()=>Promise<T>):Promise<T>=>{const e=m.get(k);if(e&&Date.now()-e.t<ttl)return e.v;const v=f();m.set(k,{t:Date.now(),v});v.catch(()=>m.delete(k));return v};
@@ -19,26 +19,25 @@ export async function POST(r:Request){const b=await r.json();
   return J({ticket:await sign({sid:b.sid,typ:'t'},'10m'),programs:s.programs||[]})}
  if(!await ticketOk(b))return J({error:'Session expired. Rescan the QR code.'},403);
  const s=await getSession(b.sid);if(!isOpen(s))return J({error:'Attendance has closed.'},404);
- const w=inside(await getVenue(s.venue_id),s.radius,b);
+ const w=inside(await getVenue(s.venue_id),Math.max(+s.radius||60,30),b); // allowed distance is never less than 30 m
  if(b.step==='where')return w.ok?J({ok:1}):J({error:where(w)},403); // early location check, right after scanning
  const id=String(b.studentId||'').trim().toUpperCase();if(!/^[A-Z0-9\/\-]{4,20}$/.test(id))return J({error:'Enter a valid student ID.'},400);
  const face=b.face,okFace=Array.isArray(face)&&face.length===128&&face.every((x:any)=>typeof x==='number'&&isFinite(x));
  const progs:string[]=s.programs||[],prog=String(b.program||'').trim();
  if(progs.length&&!progs.includes(prog))return J({error:'Please choose your programme.'},400);
- const rec=(st:string,why:string,keep=false)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,face,program) values($1,$2,$3,$4,$5,$6,$7,$8)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,w.acc,keep?face:null,progs.length?prog:null]);
+ const rec=(st:string,why:string,keep=false)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,face,program) values($1,$2,$3,$4,$5,$6,$7,$8)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,isFinite(w.acc)?w.acc:null,keep?face:null,progs.length?prog:null]);
+ const cookie=`att_${b.sid}=${encodeURIComponent(id)};Path=/;Max-Age=86400;HttpOnly;SameSite=Lax`;
  const enr=await getEnrol(s.course_id);
  if(enr.size>0&&!enr.has(id)){await rec('rejected','Not enrolled in this course');return J({error:'You are not enrolled in this course.'},403)}
- if(!b.noFace&&!okFace){await rec('rejected','No valid face data');return J({error:'Face check failed.'},400)}
+ if(!okFace){await rec('rejected','No valid face data');return J({error:'Face check failed. Rescan the QR code and try again.'},400)}
  if(!w.ok){await rec('rejected',`Outside venue (${Math.round(w.d)}m, accuracy ${Math.round(w.acc)}m)`);return J({error:'You are not at the lecture venue.'},403)}
  const m=(r.headers.get('cookie')||'').match(new RegExp(`att_${b.sid}=([^;]+)`)); // same-device check
  if(m&&decodeURIComponent(m[1])!==id){await rec('flagged',`Same device already used for ${decodeURIComponent(m[1])}`);return J({error:'This device was already used for another student ID. Your attempt was flagged.'},409)}
- if(b.noFace){ // camera could not read the face: kept for the lecturer to approve
-  await rec('flagged','Face check skipped (camera could not read face)');
-  return J({ok:1,message:'Recorded. Your lecturer will review and approve your attendance.'})}
+ if((await q("select 1 from attendance where session_id=$1 and student_id=$2 and status='accepted'",[b.sid,id])).length)return J({ok:1,message:'Already recorded.'});
  let p=faceC.get(b.sid);if(!p){p=q("select student_id id,face f from attendance where session_id=$1 and status='accepted' and face is not null",[b.sid]);faceC.set(b.sid,p)}
  const fc=await p; // faces kept in memory for the session
- if(fc.some((o:any)=>o.id===id))return J({ok:1,message:'Already recorded.'});
  const hit=fc.find((o:any)=>euclid(face,o.f)<FACE_THRESHOLD); // real face matching
- if(hit){await rec('flagged',`Same face as ${hit.id}`);return J({error:'This face was already used for another student ID. Your attempt was flagged for lecturer review.'},409)}
- fc.push({id,f:face});await rec('accepted','Verified',true);
- return J({ok:1,message:'Attendance recorded.'},200,`att_${b.sid}=${encodeURIComponent(id)};Path=/;Max-Age=86400;HttpOnly;SameSite=Lax`)}
+ if(hit){await rec('flagged',`Same face as ${hit.id}`);return J({error:'This face looks the same as another student already recorded. Your attempt was sent to your lecturer for review.'},409)}
+ try{await rec('accepted','Verified',true)}catch{return J({ok:1,message:'Already recorded.'})}
+ fc.push({id,f:face});
+ return J({ok:1,message:'Attendance recorded.'},200,cookie)}
