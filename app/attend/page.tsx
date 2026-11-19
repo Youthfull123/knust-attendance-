@@ -2,8 +2,9 @@
 import {useEffect,useRef,useState} from 'react';
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 const T=<X,>(p:Promise<X>,ms:number,what:string):Promise<X>=>Promise.race([p,new Promise<X>((_,j)=>setTimeout(()=>j(new Error(what+' timed out')),ms))]);
-const avg=(ds:number[][])=>ds[0].map((_,i)=>ds.reduce((s,d)=>s+d[i],0)/ds.length);
 const CDN='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
+// Phone ID kept in browser storage AND a cookie, so clearing only one of them does not reset it
+const devId=()=>{try{let d=localStorage.getItem('devId')||(document.cookie.match(/(?:^|; )devId=([^;]+)/)||[])[1];if(!d)d=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36));localStorage.setItem('devId',d);document.cookie='devId='+d+';Path=/;Max-Age=31536000;SameSite=Lax';return d}catch{return ''}};
 // Brightens and enlarges the camera picture. Only used when the plain picture finds no face
 const enh=(vid:HTMLVideoElement,c:HTMLCanvasElement)=>{
  const w=480,h=Math.round(w*(vid.videoHeight||480)/(vid.videoWidth||640));c.width=w;c.height=h;
@@ -22,7 +23,7 @@ export default function Attend(){
   const p=new URLSearchParams(location.search),sid=p.get('s');
   let a=await post({step:'begin',sid,t:p.get('t')});
   if(!a.ok){setMsg(a.j.error+' Please rescan the QR code.');setStep('err');return}
-  D.current={sid,ticket:a.j.ticket};setProgs(a.j.programs||[]);loc.current=a.j.loc!==false;
+  D.current={sid,ticket:a.j.ticket,device:devId()};setProgs(a.j.programs||[]);loc.current=a.j.loc!==false;
   if(loc.current){
    setMsg('Allow location access when asked…');
    const g=await getLoc();
@@ -56,21 +57,22 @@ export default function Attend(){
    try{enh(vv,c);const d=await run(c,oL);if(d)return d}catch(e:any){lastErr=String(e?.message||e)} // 2) brightened picture, more tolerant
    if(ssdOk&&frames%3===0){try{const d=await run(vv,oS);if(d)return d}catch(e:any){lastErr=String(e?.message||e)}} // 3) heavy finder, last resort
    return null};
-  const fr:number[][]=[],rat:number[]=[];let front=0,done=false;const t0=Date.now();
+  const fr:number[][]=[],side:number[][]=[],rat:number[]=[];let front=0,done=false;const t0=Date.now();
   tick=setInterval(()=>setDbg(`Checking… ${Math.round((Date.now()-t0)/1000)}s · faces found: ${faces}`),500);
   while(Date.now()-t0<90000){await sleep(100);frames++;
    let d:any=null;try{d=await T(find(),frames<=1?45000:20000,'Face detection')}catch(e:any){if(/timed out/.test(e?.message))throw e;lastErr=String(e?.message||e);continue}
    if(!d){setMsg('No face found. Move to a brighter place, wipe the camera lens and hold the phone at eye level.');continue}
    faces++;
-   const P=d.landmarks.positions,ratio=(P[30].x-P[0].x)/(P[16].x-P[0].x),frontal=ratio>.35&&ratio<.65;
-   if(frontal){if(front<3){front++;rat.push(ratio)}if(fr.length<5)fr.push(Array.from(d.descriptor as Float32Array))} // every picture counts, any quality
+   const P=d.landmarks.positions,ratio=(P[30].x-P[0].x)/(P[16].x-P[0].x),frontal=ratio>.35&&ratio<.65,desc=Array.from(d.descriptor as Float32Array);
+   if(frontal){if(front<3){front++;rat.push(ratio)}if(fr.length<4)fr.push(desc)} // straight-on pictures
    if(front<3){setMsg(frontal?'Keep looking straight…':'Look straight at the camera.');continue}
    setMsg('Now slowly turn your head to one side (left or right).');
-   const b0=rat.reduce((x,y)=>x+y,0)/rat.length;
-   if(Math.abs(ratio-b0)>.08){done=true;break}} // a turn to either side passes, so mirrored cameras work
+   const b0=rat.reduce((x,y)=>x+y,0)/rat.length,dv=Math.abs(ratio-b0);
+   if(dv>.04&&side.length<2)side.push(desc); // pictures from a different angle
+   if(dv>.08){if(side.length<3)side.push(desc);done=true;break}} // a turn to either side passes, so mirrored cameras work
   clearInterval(tick);s.getTracks().forEach((t:any)=>t.stop());
   if(!done||!fr.length){setMsg(`We could not read your face (frames ${frames}, faces found ${faces}${lastErr?', error: '+lastErr:''}). Move to a brighter place, wipe the camera lens, and rescan the QR code to try again.`);setDbg('');setStep('err');return}
-  D.current.face=avg(fr);setMsg('');setDbg('');setStep('id');
+  D.current.faces=[...fr,...side].slice(0,6);setMsg('');setDbg('');setStep('id');
  }catch(e:any){clearInterval(tick);setDbg('');setMsg('Face check error: '+(e?.message||e)+'. Open the link in Safari or Chrome, allow the camera, and rescan the QR code.');setStep('err')}})();return()=>clearInterval(tick)},[]);
  const submit=async()=>{if(step!=='id')return;if(progs.length&&!prog){setMsg('Choose your programme first.');return}setStep('wait');
   if(loc.current){setMsg('Checking your location…');
