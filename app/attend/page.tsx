@@ -17,7 +17,7 @@ export default function Attend(){
  const [msg,setMsg]=useState('Verifying QR code…'),[dbg,setDbg]=useState(''),[step,setStep]=useState('init'),[id,setId]=useState(''),[progs,setProgs]=useState<string[]>([]),[prog,setProg]=useState(''),[slow,setSlow]=useState(false);
  useEffect(()=>{setSlow(false);const t=setTimeout(()=>setSlow(true),15000);return()=>clearTimeout(t)},[msg,step]);
  const getLoc=()=>new Promise<any>(res=>navigator.geolocation.getCurrentPosition(res,()=>res(null),{enableHighAccuracy:true,timeout:20000,maximumAge:0}));
- useEffect(()=>{(async()=>{try{
+ useEffect(()=>{let tick:any;(async()=>{try{
   const post=async(o:any)=>{const r=await T(fetch('/api/attend',{method:'POST',body:JSON.stringify(o)}),20000,'Server');return {ok:r.ok,j:await r.json()}};
   const p=new URLSearchParams(location.search),sid=p.get('s');
   let a=await post({step:'begin',sid,t:p.get('t')});
@@ -38,38 +38,40 @@ export default function Attend(){
   setMsg('Step 2 of 4: preparing…');
   try{await T(f.tf.setBackend('webgl'),8000,'Graphics')}catch{try{await T(f.tf.setBackend('cpu'),8000,'Graphics')}catch{}}
   try{await T(f.tf.ready(),8000,'Graphics')}catch{}
-  setMsg('Step 3 of 4: loading face models (about 12 MB)…');
-  const need=(u:string)=>Promise.all([f.nets.ssdMobilenetv1,f.nets.faceLandmark68Net,f.nets.faceRecognitionNet].map((n:any)=>n.loadFromUri(u)));
+  setMsg('Step 3 of 4: loading face models…');
+  const need=(u:string)=>Promise.all([f.nets.tinyFaceDetector,f.nets.faceLandmark68Net,f.nets.faceRecognitionNet].map((n:any)=>n.loadFromUri(u)));
   let base=CDN;
   try{await T(need(CDN),20000,'Model download')}catch{setMsg('Step 3 of 4: loading face models (backup)…');await T(need('/models'),60000,'Model download');base='/models'}
-  let tinyOk=false;try{await T(f.nets.tinyFaceDetector.loadFromUri(base),10000,'Backup detector');tinyOk=true}catch{} // optional
+  let ssdOk=false;try{await T(f.nets.ssdMobilenetv1.loadFromUri(base),15000,'Extra detector');ssdOk=true}catch{} // optional, helps very blurry cameras
   setMsg('Step 4 of 4: starting the camera. Tap Allow if asked…');
   const s=await T(navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false}),45000,'Camera permission');
   v.current!.srcObject=s;await T(v.current!.play(),10000,'Camera preview');
-  setMsg('Look straight at the camera, then slowly turn your head to one side.');
+  setMsg('Look straight at the camera, then slowly turn your head to one side. The first check can take up to 30 seconds on some phones.');
   const c=document.createElement('canvas');
-  const o1=new f.SsdMobilenetv1Options({minConfidence:0.3}),o2=new f.SsdMobilenetv1Options({minConfidence:0.15}),o3=new f.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.1});
+  const oT=new f.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.3}),oL=new f.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.1}),oS=new f.SsdMobilenetv1Options({minConfidence:0.2});
   const run=(inp:any,o:any)=>f.detectSingleFace(inp,o).withFaceLandmarks().withFaceDescriptor();
-  let lastErr='';
+  let lastErr='',frames=0,faces=0;
   const find=async()=>{const vv=v.current!;if(!vv.videoWidth)return null;
-   try{const d=await run(vv,o1);if(d)return d}catch(e:any){lastErr=String(e?.message||e)} // 1) plain picture, as for good cameras
-   try{enh(vv,c);const d=await run(c,o2);if(d)return d;if(tinyOk){const d2=await run(c,o3);if(d2)return d2}}catch(e:any){lastErr=String(e?.message||e)} // 2) brightened picture, then backup finder
+   try{const d=await run(vv,oT);if(d)return d}catch(e:any){lastErr=String(e?.message||e)} // 1) fast finder on the plain picture
+   try{enh(vv,c);const d=await run(c,oL);if(d)return d}catch(e:any){lastErr=String(e?.message||e)} // 2) brightened picture, more tolerant
+   if(ssdOk&&frames%3===0){try{const d=await run(vv,oS);if(d)return d}catch(e:any){lastErr=String(e?.message||e)}} // 3) heavy finder, last resort
    return null};
-  const fr:number[][]=[],rat:number[]=[];let front=0,frames=0,faces=0,done=false;const t0=Date.now();
+  const fr:number[][]=[],rat:number[]=[];let front=0,done=false;const t0=Date.now();
+  tick=setInterval(()=>setDbg(`Checking… ${Math.round((Date.now()-t0)/1000)}s · faces found: ${faces}`),500);
   while(Date.now()-t0<90000){await sleep(100);frames++;
-   let d:any=null;try{d=await T(find(),15000,'Face detection')}catch(e:any){if(/timed out/.test(e?.message))throw e;lastErr=String(e?.message||e);continue}
-   if(!d){setDbg(`Checking… faces found: ${faces}`);setMsg('No face found. Move to a brighter place, wipe the camera lens and hold the phone at eye level.');continue}
-   faces++;setDbg(`Checking… faces found: ${faces}`);
+   let d:any=null;try{d=await T(find(),frames<=1?45000:20000,'Face detection')}catch(e:any){if(/timed out/.test(e?.message))throw e;lastErr=String(e?.message||e);continue}
+   if(!d){setMsg('No face found. Move to a brighter place, wipe the camera lens and hold the phone at eye level.');continue}
+   faces++;
    const P=d.landmarks.positions,ratio=(P[30].x-P[0].x)/(P[16].x-P[0].x),frontal=ratio>.35&&ratio<.65;
    if(frontal){if(front<3){front++;rat.push(ratio)}if(fr.length<5)fr.push(Array.from(d.descriptor as Float32Array))} // every picture counts, any quality
    if(front<3){setMsg(frontal?'Keep looking straight…':'Look straight at the camera.');continue}
    setMsg('Now slowly turn your head to one side (left or right).');
    const b0=rat.reduce((x,y)=>x+y,0)/rat.length;
    if(Math.abs(ratio-b0)>.08){done=true;break}} // a turn to either side passes, so mirrored cameras work
-  s.getTracks().forEach((t:any)=>t.stop());
-  if(!done||!fr.length){setMsg(`We could not read your face (frames ${frames}, faces found ${faces}${lastErr?', error: '+lastErr:''}). Move to a brighter place, wipe the camera lens, and rescan the QR code to try again.`);setStep('err');return}
+  clearInterval(tick);s.getTracks().forEach((t:any)=>t.stop());
+  if(!done||!fr.length){setMsg(`We could not read your face (frames ${frames}, faces found ${faces}${lastErr?', error: '+lastErr:''}). Move to a brighter place, wipe the camera lens, and rescan the QR code to try again.`);setDbg('');setStep('err');return}
   D.current.face=avg(fr);setMsg('');setDbg('');setStep('id');
- }catch(e:any){setMsg('Face check error: '+(e?.message||e)+'. Open the link in Safari or Chrome, allow the camera, and rescan the QR code.');setStep('err')}})()},[]);
+ }catch(e:any){clearInterval(tick);setDbg('');setMsg('Face check error: '+(e?.message||e)+'. Open the link in Safari or Chrome, allow the camera, and rescan the QR code.');setStep('err')}})();return()=>clearInterval(tick)},[]);
  const submit=async()=>{if(step!=='id')return;if(progs.length&&!prog){setMsg('Choose your programme first.');return}setStep('wait');
   if(loc.current){setMsg('Checking your location…');
    const g=await getLoc();
