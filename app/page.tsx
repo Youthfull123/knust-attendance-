@@ -6,7 +6,9 @@ const RED={background:'#fdecea',color:'#c0392b'};
 
 export default function Home(){
  const [auth,setAuth]=useState(false),[mode,setMode]=useState('login'),[busy,setBusy]=useState(false),[courses,setC]=useState<any[]>([]),[venues,setV]=useState<any[]>([]),[sid,setSid]=useState(''),[live,setL]=useState<any>(null),[err,setErr]=useState(''),[vmsg,setVmsg]=useState('');
- const load=async():Promise<boolean>=>{const c=await api('/api/courses');if(c.error||!Array.isArray(c)){setAuth(false);if(c.error&&c.error!=='auth')setErr('Could not load your account: '+c.error);return false}setAuth(true);setC(c);setV(await api('/api/venues'));return true};
+ const load=async():Promise<boolean>=>{const c=await api('/api/courses');if(c.error||!Array.isArray(c)){setAuth(false);if(c.error&&c.error!=='auth')setErr('Could not load your account: '+c.error);return false}setAuth(true);setC(c);setV(await api('/api/venues'));
+  const a=await api('/api/sessions?active=1');if(a&&a.id)setSid(s=>s||a.id); // bring back the open session (and its QR code) after a refresh
+  return true};
  useEffect(()=>{load()},[]);
  useEffect(()=>{if(!sid){setL(null);return}let on=true,t:any;const f=async()=>{const t0=Date.now(),d=await api('/api/sessions?id='+sid);if(!on)return;setL(d);const lag=(Date.now()-t0)/2;t=setTimeout(f,d.ms!=null?Math.max(100,Math.min(2000,d.ms-lag+40)):2000)};f();return()=>{on=false;clearTimeout(t)}},[sid]);
  const fd=(f:any)=>Object.fromEntries(new FormData(f));
