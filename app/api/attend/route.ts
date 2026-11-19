@@ -1,5 +1,5 @@
 import {q} from '@/lib/db';import {sign,verify} from '@/lib/auth';import {valid,dist,euclid} from '@/lib/qr';
-const FACE_THRESHOLD=0.30; // flag only when faces are more than ~70% alike (distance under 0.30). Lower = more forgiving, higher = stricter
+const FACE_THRESHOLD=0.38; // flag when two faces are closer than this. Lower = more forgiving (try 0.34), higher = stricter (try 0.42)
 const J=(b:any,s=200,c?:string)=>new Response(JSON.stringify(b),{status:s,headers:{'content-type':'application/json',...(c?{'set-cookie':c}:{})}});
 type E<T>={t:number,v:Promise<T>};
 const memo=<T>(m:Map<string,E<T>>,k:string,ttl:number,f:()=>Promise<T>):Promise<T>=>{const e=m.get(k);if(e&&Date.now()-e.t<ttl)return e.v;const v=f();m.set(k,{t:Date.now(),v});v.catch(()=>m.delete(k));return v};
@@ -11,6 +11,8 @@ const isOpen=(s:any)=>!!s&&s.status==='active'&&new Date(s.ends_at)>new Date();
 const inside=(v:any,radius:number,b:any)=>{const d=dist(+b.lat,+b.lng,v.lat,v.lng),acc=+b.acc||9999;return {d,acc,ok:isFinite(d)&&acc<=100&&d-Math.min(acc,25)<=radius}};
 const ticketOk=async(b:any)=>{const t=await verify(b.ticket);return !!t&&t.typ==='t'&&t.sid===b.sid};
 const where=(w:any)=>w.acc>100?'Your location is not accurate enough. Move near a window and rescan.':`You are not at the lecture venue (${Math.round(w.d)} m away).`;
+const chunk=(a:number[]|null)=>{const o:number[][]=[];if(a)for(let i=0;i+128<=a.length;i+=128)o.push(a.slice(i,i+128));return o}; // stored faces are several 128-number pictures joined together
+const near=(A:number[][],B:number[][])=>{let m=9;for(const a of A)for(const b of B){const d=euclid(a,b);if(d<m)m=d}return m}; // closest pair of pictures
 
 export async function POST(r:Request){const b=await r.json();
  if(b.step==='begin'){const s=b.sid&&await getSession(b.sid).catch(()=>null);
@@ -22,22 +24,28 @@ export async function POST(r:Request){const b=await r.json();
  const w=inside(await getVenue(s.venue_id),Math.max(+s.radius||60,30),b); // allowed distance is never less than 30 m
  if(b.step==='where')return w.ok?J({ok:1}):J({error:where(w)},403); // early location check, right after scanning
  const id=String(b.studentId||'').trim().toUpperCase();if(!/^[A-Z0-9\/\-]{4,20}$/.test(id))return J({error:'Enter a valid student ID.'},400);
- const face=b.face,okFace=Array.isArray(face)&&face.length===128&&face.every((x:any)=>typeof x==='number'&&isFinite(x));
+ const faces:number[][]=Array.isArray(b.faces)?b.faces:(Array.isArray(b.face)?[b.face]:[]);
+ const okFace=faces.length>=1&&faces.length<=6&&faces.every((x:any)=>Array.isArray(x)&&x.length===128&&x.every((n:any)=>typeof n==='number'&&isFinite(n)));
+ const cookies=r.headers.get('cookie')||'';
+ const dev=String(b.device||(cookies.match(/(?:^|; )devId=([^;]+)/)||[])[1]||'').slice(0,64); // phone ID kept in browser storage and a cookie
  const progs:string[]=s.programs||[],prog=String(b.program||'').trim();
  if(progs.length&&!progs.includes(prog))return J({error:'Please choose your programme.'},400);
- const rec=(st:string,why:string,keep=false)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,face,program) values($1,$2,$3,$4,$5,$6,$7,$8)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,isFinite(w.acc)?w.acc:null,keep?face:null,progs.length?prog:null]);
+ const rec=(st:string,why:string,keep=false)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,face,program,device) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,isFinite(w.acc)?w.acc:null,keep&&okFace?faces.flat():null,progs.length?prog:null,dev||null]);
  const cookie=`att_${b.sid}=${encodeURIComponent(id)};Path=/;Max-Age=86400;HttpOnly;SameSite=Lax`;
  const enr=await getEnrol(s.course_id);
  if(enr.size>0&&!enr.has(id)){await rec('rejected','Not enrolled in this course');return J({error:'You are not enrolled in this course.'},403)}
  if(!okFace){await rec('rejected','No valid face data');return J({error:'Face check failed. Rescan the QR code and try again.'},400)}
  if(!w.ok){await rec('rejected',`Outside venue (${Math.round(w.d)}m, accuracy ${Math.round(w.acc)}m)`);return J({error:'You are not at the lecture venue.'},403)}
- const m=(r.headers.get('cookie')||'').match(new RegExp(`att_${b.sid}=([^;]+)`)); // same-device check
+ const m=cookies.match(new RegExp(`att_${b.sid}=([^;]+)`)); // same-device check 1: session cookie
  if(m&&decodeURIComponent(m[1])!==id){await rec('flagged',`Same device already used for ${decodeURIComponent(m[1])}`);return J({error:'This device was already used for another student ID. Your attempt was flagged.'},409)}
+ if(dev.length>=8){ // same-device check 2: phone ID recorded with every accepted attendance
+  const [x]=await q("select student_id from attendance where session_id=$1 and device=$2 and status='accepted' and student_id<>$3 limit 1",[b.sid,dev,id]);
+  if(x){await rec('flagged',`Same device already used for ${x.student_id}`);return J({error:'This device was already used for another student ID. Your attempt was flagged.'},409)}}
  if((await q("select 1 from attendance where session_id=$1 and student_id=$2 and status='accepted'",[b.sid,id])).length)return J({ok:1,message:'Already recorded.'});
- let p=faceC.get(b.sid);if(!p){p=q("select student_id id,face f from attendance where session_id=$1 and status='accepted' and face is not null",[b.sid]);faceC.set(b.sid,p)}
+ let p=faceC.get(b.sid);if(!p){p=q("select student_id id,face f from attendance where session_id=$1 and status='accepted' and face is not null",[b.sid]).then((rows:any[])=>rows.map(x=>({id:x.id,fs:chunk(x.f)})));faceC.set(b.sid,p)}
  const fc=await p; // faces kept in memory for the session
- const hit=fc.find((o:any)=>euclid(face,o.f)<FACE_THRESHOLD); // real face matching
+ const hit=fc.find((o:any)=>near(faces,o.fs)<FACE_THRESHOLD); // real face matching, all pictures against all pictures
  if(hit){await rec('flagged',`Same face as ${hit.id}`);return J({error:'This face looks the same as another student already recorded. Your attempt was sent to your lecturer for review.'},409)}
  try{await rec('accepted','Verified',true)}catch{return J({ok:1,message:'Already recorded.'})}
- fc.push({id,f:face});
+ fc.push({id,fs:faces});
  return J({ok:1,message:'Attendance recorded.'},200,cookie)}
