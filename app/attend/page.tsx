@@ -5,13 +5,15 @@ const T=<X,>(p:Promise<X>,ms:number,what:string):Promise<X>=>Promise.race([p,new
 const devId=()=>{try{let d=localStorage.getItem('devId')||(document.cookie.match(/(?:^|; )devId=([^;]+)/)||[])[1];if(!d)d=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36));localStorage.setItem('devId',d);document.cookie='devId='+d+';Path=/;Max-Age=31536000;SameSite=Lax';return d}catch{return ''}};
 export default function Attend(){
  const D=useRef<any>({});
- const [msg,setMsg]=useState('Verifying QR code…'),[step,setStep]=useState('init'),[id,setId]=useState(''),[progs,setProgs]=useState<string[]>([]),[prog,setProg]=useState('');
+ const [msg,setMsg]=useState('Verifying QR code…'),[step,setStep]=useState('init'),[id,setId]=useState(''),[progs,setProgs]=useState<string[]>([]),[prog,setProg]=useState(''),[dev,setDev]=useState('');
  const getLoc=()=>new Promise<any>(res=>navigator.geolocation.getCurrentPosition(res,()=>res(null),{enableHighAccuracy:true,timeout:20000,maximumAge:0}));
  useEffect(()=>{(async()=>{try{
   const post=async(o:any)=>{const r=await T(fetch('/api/attend',{method:'POST',body:JSON.stringify(o)}),20000,'Server');return {ok:r.ok,j:await r.json()}};
   const p=new URLSearchParams(location.search),sid=p.get('s');
-  let a=await post({step:'begin',sid,t:p.get('t'),device:devId()});
+  const dv=devId();setDev(dv.slice(0,8));
+  let a=await post({step:'begin',sid,t:p.get('t'),device:dv});
   if(!a.ok){setMsg(a.j.error+' Please rescan the QR code.');setStep('err');return}
+  if(a.j.locked){setMsg(`This phone is already logged in as ${a.j.locked} for this session. Your attendance is recorded. You cannot use another student ID until the session is closed.`);setStep('done');return}
   D.current={sid,ticket:a.j.ticket};setProgs(a.j.programs||[]);
   setMsg('Allow location access when asked…');
   const g=await getLoc();
@@ -35,4 +37,5 @@ export default function Attend(){
   else{setStep('done');setMsg(j.error)}};
  return <div className="card" style={{maxWidth:420,margin:'20px auto'}}>
   <p>{msg}</p>
-  {step==='id'&&<div><input value={id} onChange={e=>setId(e.target.value)} placeholder="Student ID"/><br/>{progs.length>0&&<><select value={prog} onChange={e=>setProg(e.target.value)}><option value="">Choose your programme</option>{progs.map(p=><option key={p} value={p}>{p}</option>)}</select><br/></>}<button onClick={submit}>Submit Attendance</button></div>}</div>}
+  {step==='id'&&<div><input value={id} onChange={e=>setId(e.target.value)} placeholder="Student ID"/><br/>{progs.length>0&&<><select value={prog} onChange={e=>setProg(e.target.value)}><option value="">Choose your programme</option>{progs.map(p=><option key={p} value={p}>{p}</option>)}</select><br/></>}<button onClick={submit}>Submit Attendance</button></div>}
+  {dev&&<p style={{color:'#999',fontSize:11,marginTop:16}}>Phone code: {dev}</p>}</div>}
