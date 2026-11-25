@@ -3,6 +3,14 @@ import {useEffect,useRef,useState} from 'react';
 const T=<X,>(p:Promise<X>,ms:number,what:string):Promise<X>=>Promise.race([p,new Promise<X>((_,j)=>setTimeout(()=>j(new Error(what+' timed out')),ms))]);
 // Phone ID kept in browser storage AND a cookie, so clearing only one of them does not reset it
 const devId=()=>{try{let d=localStorage.getItem('devId')||(document.cookie.match(/(?:^|; )devId=([^;]+)/)||[])[1];if(!d)d=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36));localStorage.setItem('devId',d);document.cookie='devId='+d+';Path=/;Max-Age=31536000;SameSite=Lax';return d}catch{return ''}};
+// Phone signature from the hardware/browser traits. Survives clearing storage, private tabs and cookie resets.
+const fp=async():Promise<string>=>{try{
+ const c=document.createElement('canvas');c.width=220;c.height=40;const x:any=c.getContext('2d');x.textBaseline='top';x.font='16px Arial';x.fillText('KNUST attend 123 ✓',2,2);
+ let gl='';try{const g:any=document.createElement('canvas').getContext('webgl');const e=g.getExtension('WEBGL_debug_renderer_info');gl=g.getParameter(e.UNMASKED_RENDERER_WEBGL)+'|'+g.getParameter(e.UNMASKED_VENDOR_WEBGL)}catch{}
+ const n:any=navigator;
+ const raw=[c.toDataURL(),gl,screen.width,screen.height,screen.colorDepth,devicePixelRatio,Intl.DateTimeFormat().resolvedOptions().timeZone,n.language,n.hardwareConcurrency,n.deviceMemory,n.maxTouchPoints,n.platform].join('|');
+ const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+ return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,32)}catch{return ''}};
 export default function Attend(){
  const D=useRef<any>({});
  const [msg,setMsg]=useState('Verifying QR code…'),[step,setStep]=useState('init'),[id,setId]=useState(''),[progs,setProgs]=useState<string[]>([]),[prog,setProg]=useState(''),[dev,setDev]=useState('');
@@ -11,7 +19,7 @@ export default function Attend(){
   const post=async(o:any)=>{const r=await T(fetch('/api/attend',{method:'POST',body:JSON.stringify(o)}),20000,'Server');return {ok:r.ok,j:await r.json()}};
   const p=new URLSearchParams(location.search),sid=p.get('s');
   const dv=devId();setDev(dv.slice(0,8));
-  let a=await post({step:'begin',sid,t:p.get('t'),device:dv});
+  let a=await post({step:'begin',sid,t:p.get('t'),device:dv,fp:await fp()});
   if(!a.ok){setMsg(a.j.error+' Please rescan the QR code.');setStep('err');return}
   if(a.j.locked){setMsg(`This phone is already logged in as ${a.j.locked} for this session. Your attendance is recorded. You cannot use another student ID until the session is closed.`);setStep('done');return}
   D.current={sid,ticket:a.j.ticket};setProgs(a.j.programs||[]);
