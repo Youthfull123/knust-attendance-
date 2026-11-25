@@ -13,11 +13,18 @@ const getEnrol=(cid:number)=>memo(enrC,String(cid),30000,async()=>new Set<string
 const isOpen=(s:any)=>!!s&&s.status==='active'&&new Date(s.ends_at)>new Date();
 const inside=(v:any,radius:number,b:any)=>{const d=dist(+b.lat,+b.lng,v.lat,v.lng),acc=+b.acc||9999;return {d,acc,ok:isFinite(d)&&acc<=100&&d-Math.min(acc,25)<=radius}};
 const where=(w:any)=>w.acc>100?'Your location is not accurate enough. Move near a window and rescan.':`You are not at the lecture venue (${Math.round(w.d)} m away).`;
+// The student this phone is logged in as for this session (from the signed cookie). Released if the lecturer deletes that student's record.
+const bound=async(cookies:string,sid:string):Promise<string|null>=>{
+ const m=cookies.match(new RegExp(`(?:^|; )stu_${sid}=([^;]+)`));if(!m)return null;
+ const p:any=await verify(decodeURIComponent(m[1]));if(!p||p.typ!=='stu'||p.sid!==sid)return null;
+ const ok=(await q("select 1 from attendance where session_id=$1 and student_id=$2 and status='accepted'",[sid,p.id])).length>0;
+ return ok?String(p.id):null};
 
 export async function POST(r:Request){const b=await r.json();const cookies=r.headers.get('cookie')||'';
  if(b.step==='begin'){const s=b.sid&&await getSession(b.sid).catch(()=>null);
   if(!isOpen(s))return J({error:'Attendance is not open.'},404);
   if(!valid(s.secret,b.sid,b.t))return J({error:'QR code expired.'},403); // server-side token check
+  const bd=await bound(cookies,b.sid);if(bd)return J({locked:bd}); // this phone is already logged in for this session
   const dev=String(b.device||(cookies.match(/(?:^|; )devId=([^;]+)/)||[])[1]||'').slice(0,64); // phone ID kept in browser storage and a cookie
   if(dev.length<8)return J({error:'Your browser blocked storage. Open the link in Safari or Chrome (not in a private tab) and rescan.'},400);
   return J({ticket:await sign({sid:b.sid,typ:'t',dev,jti:randomUUID(),t0:Date.now()},'10m'),programs:s.programs||[]})} // phone ID is locked into the ticket
@@ -32,18 +39,18 @@ export async function POST(r:Request){const b=await r.json();const cookies=r.hea
  const progs:string[]=s.programs||[],prog=String(b.program||'').trim();
  if(progs.length&&!progs.includes(prog))return J({error:'Please choose your programme.'},400);
  const rec=(st:string,why:string)=>q('insert into attendance(session_id,student_id,status,reason,dist,acc,program,device) values($1,$2,$3,$4,$5,$6,$7,$8)',[b.sid,id,st,why,isFinite(w.d)?w.d:null,isFinite(w.acc)?w.acc:null,progs.length?prog:null,dev]);
- const cookie=`att_${b.sid}=${encodeURIComponent(id)};Path=/;Max-Age=86400;HttpOnly;SameSite=Lax`;
  const enr=await getEnrol(s.course_id);
  if(enr.size>0&&!enr.has(id)){await rec('rejected','Not enrolled in this course');return J({error:'You are not enrolled in this course. Check your student ID.'},403)}
  if(!w.ok){await rec('rejected',`Outside venue (${Math.round(w.d)}m, accuracy ${Math.round(w.acc)}m)`);return J({error:'You are not at the lecture venue.'},403)}
  if(used.size>50000)used.clear();
  if((await q("select 1 from attendance where session_id=$1 and student_id=$2 and status='accepted'",[b.sid,id])).length){used.add(jti);return J({ok:1,message:'Already recorded.'})}
- const m=cookies.match(new RegExp(`att_${b.sid}=([^;]+)`)); // one-device check 1: session cookie
- if(m&&decodeURIComponent(m[1])!==id){used.add(jti);await rec('flagged',`Same device already used for ${decodeURIComponent(m[1])}`);return J({error:'This phone was already used for another student ID. Your attempt was flagged. Tell your lecturer.'},409)}
- // one-device check 2: phone ID, in this session and (optionally) anywhere in this course
+ const bd=await bound(cookies,b.sid); // login lock: this phone is already logged in as someone else
+ if(bd&&bd!==id){used.add(jti);await rec('flagged',`Tried to use ${id} on a phone logged in as ${bd}`);return J({error:`This phone is already logged in as ${bd} for this session. You cannot use another student ID until the session is closed.`},409)}
+ // second layer: phone ID, in this session and (optionally) anywhere in this course
  const [x]=await q(`select a.student_id,(a.session_id=$4) as same_session from attendance a join sessions s2 on s2.id=a.session_id where a.device=$2 and a.status='accepted' and a.student_id<>$3 and ((s2.course_id=$1 and $5) or a.session_id=$4) order by (a.session_id=$4) desc limit 1`,[s.course_id,dev,id,b.sid,CROSS_SESSION_CHECK]);
  if(x){used.add(jti);await rec('flagged',x.same_session?`Same device already used for ${x.student_id}`:`Phone previously used by ${x.student_id} in this course`);
   return J({error:x.same_session?'This phone was already used for another student ID. Your attempt was flagged. Tell your lecturer.':'This phone was already used by another student in this course. Your attempt was flagged. Tell your lecturer.'},409)}
  try{await rec('accepted','Verified')}catch{used.add(jti);return J({ok:1,message:'Already recorded.'})}
  used.add(jti);
- return J({ok:1,message:'Attendance recorded.'},200,cookie)}
+ const stu=await sign({typ:'stu',sid:b.sid,id},'24h'); // the login: signed, cannot be edited by the student
+ return J({ok:1,message:`Attendance recorded. This phone is now logged in as ${id} until the session closes.`},200,`stu_${b.sid}=${encodeURIComponent(stu)};Path=/;Max-Age=86400;HttpOnly;SameSite=Lax`)}
