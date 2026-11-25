@@ -14,6 +14,7 @@ create table if not exists sessions(id uuid primary key default gen_random_uuid(
 create table if not exists attendance(id serial primary key,session_id uuid references sessions(id),student_id text not null,status text not null,reason text,dist float8,acc float8,face float8[],created_at timestamptz default now());
 alter table attendance add column if not exists program text;
 alter table attendance add column if not exists device text;
+alter table attendance add column if not exists fp text;
 create index if not exists att_device on attendance(session_id,device);
 create unique index if not exists one_accepted on attendance(session_id,student_id) where status='accepted';`;
 // One accepted attendance per phone per session, enforced by the database itself (stops two simultaneous submits).
