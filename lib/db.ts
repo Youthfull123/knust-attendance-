@@ -16,5 +16,8 @@ alter table attendance add column if not exists program text;
 alter table attendance add column if not exists device text;
 create index if not exists att_device on attendance(session_id,device);
 create unique index if not exists one_accepted on attendance(session_id,student_id) where status='accepted';`;
+// One accepted attendance per phone per session, enforced by the database itself (stops two simultaneous submits).
+// Kept separate and wrapped in catch: if old data already has duplicates the index cannot be built, and the app must still start.
+const DEVICE_LOCK=`create unique index if not exists one_device on attendance(session_id,device) where status='accepted' and device is not null`;
 let ready:Promise<any>|null=null;
-export const q=async(s:string,a:any[]=[])=>{ready??=p.query(SCHEMA);await ready;return (await p.query(s,a)).rows};
+export const q=async(s:string,a:any[]=[])=>{ready??=p.query(SCHEMA).then(()=>p.query(DEVICE_LOCK).catch(e=>console.error('one_device index not created:',e.message)));await ready;return (await p.query(s,a)).rows};
