@@ -50,7 +50,14 @@ export async function POST(r:Request){const b=await r.json();const cookies=r.hea
  const [x]=await q(`select a.student_id,(a.session_id=$4) as same_session from attendance a join sessions s2 on s2.id=a.session_id where a.device=$2 and a.status='accepted' and a.student_id<>$3 and ((s2.course_id=$1 and $5) or a.session_id=$4) order by (a.session_id=$4) desc limit 1`,[s.course_id,dev,id,b.sid,CROSS_SESSION_CHECK]);
  if(x){used.add(jti);await rec('flagged',x.same_session?`Same device already used for ${x.student_id}`:`Phone previously used by ${x.student_id} in this course`);
   return J({error:x.same_session?'This phone was already used for another student ID. Your attempt was flagged. Tell your lecturer.':'This phone was already used by another student in this course. Your attempt was flagged. Tell your lecturer.'},409)}
- try{await rec('accepted','Verified')}catch{used.add(jti);return J({ok:1,message:'Already recorded.'})}
+ try{await rec('accepted','Verified')}catch(e:any){
+  used.add(jti);
+  if(e?.code==='23505'&&String(e?.constraint||'').includes('one_device')){ // another submit from this same phone won the race
+   const [o]=await q("select student_id from attendance where session_id=$1 and device=$2 and status='accepted' limit 1",[b.sid,dev]);
+   if(o&&o.student_id===id)return J({ok:1,message:'Already recorded.'});
+   await rec('flagged',`Same device already used for ${o?.student_id||'another student'}`).catch(()=>{});
+   return J({error:'This phone was already used for another student ID. Your attempt was flagged. Tell your lecturer.'},409)}
+  return J({ok:1,message:'Already recorded.'})}
  used.add(jti);
  const stu=await sign({typ:'stu',sid:b.sid,id},'24h'); // the login: signed, cannot be edited by the student
  return J({ok:1,message:`Attendance recorded. This phone is now logged in as ${id} until the session closes.`},200,`stu_${b.sid}=${encodeURIComponent(stu)};Path=/;Max-Age=86400;HttpOnly;SameSite=Lax`)}
